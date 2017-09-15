@@ -1,0 +1,9 @@
+*.o 
+*.p8c 
+*.lst 
+*.map
+*.po
+*.SHK
+*.shk
+help
+test
