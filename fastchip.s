@@ -472,8 +472,7 @@ spdtab:   .byte 0,0,0,2,0,3
           .byte $00
           rts
 .endproc
-; set carry if disk II
-; clear carry if not
+; check slot referenced by A, set carry if disk II, clear carry if not
 .proc     is_disk_ii
           ora   #$c0
           sta   mytemp+1
