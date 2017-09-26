@@ -5,10 +5,13 @@
 ;   -l        List speeds and exit
 ;   -e <num>  Enable FastChip, 1 = on, 0 = off (sync)
 ;   -s <num>  Set speed, 0-40, see -l for list of speed values
-;   -p <str>  Set slot speeds, slot numbers in str are set to fast, rest slow.
+;   -p <str>  Set slot speeds, slot numbers in str are set to fast, rest slow
+;             To set all slow, use -p 0
 ;   -a <num>  Set audio (speaker) delay, 0-4 (Off/Fast/Normal/Music/Hifi)
 ;   -j <num>  Set joystick delay, 0-2 (Off/Short/Long)
 ;   -b <num>  Set backlight, 0-5 (Off/Fade/Speed/R/G/B)
+;
+; Invalid values are silently ingored.
 ;
 ; No options: List current settings
 ; %hend
@@ -43,6 +46,12 @@ prbyte    = $fdda
           DX_info $01,$12,dx_cc_iie_or_iigs,$00
           DX_ptab
           DX_parm 'l',t_nil     ; list speeds
+          DX_parm 'e',t_int1    ; enable/disable
+          DX_parm 's',t_int1    ; speed
+          DX_parm 'p',t_string  ; slot speeds
+          DX_parm 'a',t_int1    ; speaker delay
+          DX_parm 'j',t_int1    ; joystick delay
+          DX_parm 'b',t_int1    ; backlight
           DX_end_ptab
           DX_desc "Control FastChip //e."
           DX_main
@@ -83,9 +92,130 @@ doit:     lda   #$00
           bne   :+
           jsr   show_all
 :         rts
+
 ; Try all config setting options
 .proc     try_all
+          jsr   fcunlock
+          jsr   try_state
+          jsr   try_speed
+          jsr   try_slots
+          jsr   try_speaker
+          jsr   try_joystick
+          jsr   try_backlight
+          jsr   fclock
           rts
+.endproc
+
+.proc     try_state
+          lda   #'e'|$80
+          jsr   xgetparm_ch
+          bcs   done
+          cpy   #$02            ; too big?
+          bcs   done
+          cpy   #$01
+          bne   :+              ; want disable
+          lda   #$01
+          sta   fcbase+1        ; enable
+          bne   diddone
+:         lda   #$01            ; anything but $a6 or $6a
+          sta   fcbase          ; disable
+diddone:  jsr   show_state
+          inc   showall
+done:     rts
+.endproc
+
+.proc     try_speed
+          lda   #'s'|$80
+          jsr   xgetparm_ch
+          bcs   done
+          cpy   #41             ; too big?
+          bcs   done
+          lda   #CFG_SPEED
+          sta   fcbase+5        ; config reg
+          sty   fcbase+6        ; value
+          jsr   show_speed
+          inc   showall
+done:     rts
+.endproc
+
+.proc     try_slots
+          lda   #'p'|$80
+          jsr   xgetparm_ch
+          bcs   done
+          sta   mytemp+1        ; save string pointer
+          sty   mytemp
+          ldy   #$00
+          sty   myidx           ; we'll keep calculated value here
+          lda   (mytemp),y      ; length of string
+          beq   done            ; empty
+          tay                   ; length into y
+lp:       lda   (mytemp),y      ; get char
+          and   #$7f
+          cmp   #'1'
+          bcc   next            
+          cmp   #'7'+1
+          bcs   next
+          and   #$0f            ; get the bits we need to shift
+          tax
+          lda   #$01
+:         asl                   ; shift left for the slot
+          dex
+          bne   :-
+          ora   myidx           ; combine with existing
+          sta   myidx           ; and save
+next:     dey
+          bne   lp
+          ldy   myidx           ; get computed value
+          lda   #CFG_SPEED
+          sta   fcbase+5        ; config reg
+          sty   fcbase+6        ; value
+          ;lda   #$00            ; DEBUG
+          ;jsr   xprdec_2        ; DEBUG
+          jsr   show_slots
+          inc   showall
+done:     rts
+.endproc
+
+.proc     try_speaker
+          lda   #'a'|$80
+          jsr   xgetparm_ch
+          bcs   done
+          cpy   #05             ; too big?
+          bcs   done
+          lda   #CFG_SPKR
+          sta   fcbase+5        ; config reg
+          sty   fcbase+6        ; value
+          jsr   show_speaker
+          inc   showall
+done:     rts
+.endproc
+
+.proc     try_joystick
+          lda   #'j'|$80
+          jsr   xgetparm_ch
+          bcs   done
+          cpy   #03            ; too big?
+          bcs   done
+          lda   #CFG_JSTCK
+          sta   fcbase+5        ; config reg
+          sty   fcbase+6        ; value
+          jsr   show_joystick
+          inc   showall
+done:     rts
+.endproc
+
+.proc     try_backlight
+          lda   #'b'|$80
+          jsr   xgetparm_ch
+          bcs   done
+          cpy   #06            ; too big?
+          bcs   done
+          lda   #CFG_LIGHT
+          sta   fcbase+5        ; config reg
+          sty   fcbase+6        ; value
+          jsr   show_backlight
+          inc   showall
+done:     rts
 .endproc
 
 ; Show all current settings
