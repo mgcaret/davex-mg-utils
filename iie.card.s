@@ -99,20 +99,19 @@ fast:     jsr   xmess
           rts
 .endproc
 .proc     setspeed
-          cpy   #$00
+          lda   #%00000100      ; bit position of speed in $c05c and $c02b
+          cpy   #$00            ; y reg will determine selected speed.  Is 0?
           beq   norm            ; set normal
-          dey 
-          beq   fast
-          lda   $c05c
-          and   #%00000100      ; bit 2 = option panel speed
-          beq   norm
-fast:     lda   #%00000100
-          ora   $c02b
-store:    sta   $c02b
+          dey                   ; is 1?
+          beq   fast            ; fast instead
+          ; default fall through to option panel speed
+          trb   $c02b           ; default to slow
+          and   $c05c           ; bit 2 of $c05c reflects option panel setting
+          ; fall through to tsb, which will do nothing if a = $00 (slow)
+fast:     tsb   $c02b
           rts
-norm:     lda   #%11111011
-          and   $c02b
-          bra   store
+norm:     trb   $c02b
+          rts
 .endproc
 .proc     dispslot
           jsr   xmess

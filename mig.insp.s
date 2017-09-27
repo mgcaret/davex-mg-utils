@@ -45,7 +45,7 @@
 .include "davex-mg.inc"
 
 ; build options
-SKIPROMID = 1                 ; skip ROM identification
+SKIPROMID = 0                 ; skip ROM identification
                               ; lets you use on a non-
                               ; IIc Plus, but obviously
                               ; isn't useful beyond some
