@@ -55,11 +55,16 @@ See idemu for more comprehensive emulator detection.
 
 There are also a few other enhancements around SmartPort device info.
 
+
 ### Misc
 
 #### dmem
 
 Displays info on davex "dynamic memory."  Mainly for testing purposes.
+
+#### fastchip (beta)
+
+Controls the A2Heaven FastChip //e.
 
 #### idemu
 
