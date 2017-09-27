@@ -1,7 +1,7 @@
 ; %help
 ; at.zones -- Display AppleTalk zones.
 ;
-; syntax:   at.info
+; syntax:   at.zones
 ;
 ; Displays local AppleTalk zone and all known zones.
 ; %hend
