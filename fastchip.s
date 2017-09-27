@@ -11,7 +11,7 @@
 ;   -j <num>  Set joystick delay, 0-2 (Off/Short/Long)
 ;   -b <num>  Set backlight, 0-5 (Off/Fade/Speed/R/G/B)
 ;
-; Invalid values are silently ingored.
+; Invalid values are silently ignored.
 ;
 ; No options: List current settings
 ; %hend
