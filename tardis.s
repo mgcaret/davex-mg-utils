@@ -28,7 +28,7 @@ stemp     = sptr2+2
 verbose   = stemp+1             ; verbose flag
 
           DX_start dx_mg_auto_origin ; load address
-          DX_info $01,$12,dx_cc_iie_or_iigs,$00
+          DX_info $02,$12,dx_cc_iie_or_iigs,$00
           DX_ptab
           DX_parm 'v',t_nil     ; verbose
           DX_parm 'n',t_string  ; name
