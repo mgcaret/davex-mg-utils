@@ -7,6 +7,8 @@
 ;  -p             Set ProDOS global page date/time.
 ;  -s <type>      Set a clock of <type>, current supported
 ;                 types: none.
+;  -e <hours>			Adjust time eastward.
+;  -w <hours>			Adjust time westward.
 ; %hend
 
 .pc02
@@ -33,6 +35,8 @@ verbose   = stemp+1             ; verbose flag
           DX_parm 'z',t_string  ; zone
           DX_parm 'p',t_nil     ; set prodos time
           DX_parm 's',t_string  ; set clock
+          DX_parm 'e',t_int1		; east adjust
+          DX_parm 'w',t_int1		; west adjust
           DX_end_ptab
           DX_desc "Get time from TimeLord server."
           DX_main
@@ -140,17 +144,50 @@ exiterr1: jmp   exiterr
 :         lda   #$01
           sta   ATPbmap
           ATcall ATPparms
-          bcs   notime         ; if error, bail now
-          ; now do big-endian addition of the base offset
-          sec
+          bcc		:+
+          jmp   notime         ; if error, bail now
+          ; now do big-endian subtraction of the base offset
+          ; and simultaneously put the computed value in From
+:         sec
           ldx   #$03
 :         lda   To,x
           sbc   Base,x
           sta   From,x
           dex
           bpl   :-
-          ; Use the WS card to convert it to ProDOS format
-          ATcall CvtParms
+          ; Apply user-requested adjustments:
+					lda 	#'e'|$80
+					jsr		xgetparm_ch
+					bcs		ckwest
+					cpy		#$01
+					bcc		ckwest
+          ; now do big-endian addition of eastward adjustment
+:         clc
+          ldx   #$03
+:         lda   From,x
+          adc   Hour,x
+          sta   From,x
+          dex
+          bpl   :-
+          dey
+          bne		:--					
+ckwest:		lda 	#'w'|$80
+					jsr		xgetparm_ch
+					bcs		convert
+					cpy		#$01
+					bcc		convert
+					; do big-endian subtraction of westward adjustment
+:         sec
+          ldx   #$03
+:         lda   From,x
+          sbc   Hour,x
+          sta   From,x
+          dex
+          bpl   :-
+          dey
+          bne		:--
+          ; Use the WS card to convert value in From to ProDOS format in To
+convert:  ATcall CvtParms
           bcs   notime          ; bail if error
           ; Display date/time
           ldy   To
@@ -413,7 +450,7 @@ next:     lda   #$01
 :         ldy	#0
           ; copy loop
 :         phy
-		      lda	  (sptr2),y
+		  		lda	  (sptr2),y
           ldy	  stemp
           sta	  (sptr),y
           inc   stemp
@@ -437,8 +474,11 @@ nodenum:  .byte $00             ; node number
 defname:  .byte 1,"="           ; object
 deftype:  .byte 8,"TimeLord"    ; type
 defzone:  .byte 1,"*"           ; zone
-; Base offset for epoch conversion
-Base:     .byte $B4,$93,$56,$70 ; in big-endian order
+; Base offset for epoch conversion, in big-endian order
+;Base:     .byte $B4,$93,$56,$70 ; PDT
+Base:    	.byte $b4,$92,$f4,$00	; GMT - set timezone or use adjust options
+; Hours adjustment value
+Hour:			.byte $00,$00,$0e,$10	; 3600 seconds
 ; parameter list for NBPLookup
 lookup:   .byte 0,16            ; sync NBPLookup
           .word $0000           ; result
