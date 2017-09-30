@@ -5,7 +5,7 @@ BOOTDSK=~/vii_hd.2mg
 CA65=ca65
 LD65=utils/auto_origin.sh ld65
 GENHELP=utils/gen_help.sh
-MG_CMDS=at.info.p8c at.zones.p8c afp.userprefix.p8c afp.sessions.p8c alias.p8c at.boot.p8c deschw.p8c dmem.p8c nbp.lookup.p8c tardis.p8c nbp.parse.p8c iie.card.p8c idemu.p8c mig.insp.p8c fastchip.p8c
+MG_CMDS=at.info.p8c at.zones.p8c afp.userprefix.p8c afp.sessions.p8c alias.p8c at.boot.p8c deschw.p8c dmem.p8c nbp.lookup.p8c tardis.p8c nbp.parse.p8c iie.card.p8c idemu.p8c mig.insp.p8c fastchip.p8c afp.timezone.p8c
 
 .PHONY: all
 all: shk ;
