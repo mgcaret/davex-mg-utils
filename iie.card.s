@@ -33,7 +33,8 @@ exiterr:  lda   #$ff
           jsr   xredirect
           jmp   xerr
 :         lda   $fbc0           ; check for enhanced monitor
-          cmp   #$e0            ; $e0 = enhanced
+          and   #$fe
+          cmp   #$e0            ; $e0 = enhanced, $e1 = debug
           bne   badiie
           lda   $fbdd           ; //e Card ID byte
           cmp   #$02
