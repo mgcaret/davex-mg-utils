@@ -1,12 +1,14 @@
 ; %help
 ; fastchip -- Control A2Heaven FastChip //e
 ;
+; THIS PROGRAM IS ALPHA AND DOESN'T WORK YET!
+;
 ; options:
 ;   -l        List speeds and exit
 ;   -e <num>  Enable FastChip, 1 = on, 0 = off (sync)
 ;   -s <num>  Set speed, 0-40, see -l for list of speed values
 ;   -p <str>  Set slot speeds, slot numbers in str are set to fast, rest slow
-;             To set all slow, use -p 0
+;             To set all slow, use -p 0.  Will not set Disk IIs to fast.
 ;   -a <num>  Set audio (speaker) delay, 0-4 (Off/Fast/Normal/Music/Hifi)
 ;   -j <num>  Set joystick delay, 0-2 (Off/Short/Long)
 ;   -b <num>  Set backlight, 0-5 (Off/Fade/Speed/R/G/B)
@@ -30,11 +32,18 @@ CFG_LIGHT = $07
 ch        = $24
 
 fcbase    = $c06a
+fcenable  = fcbase+1
+fcslots   = fcbase+2
+fcspeed   = fcbase+3
+fcregnum  = fcbase+4
+fcregval  = fcbase+5
 
 showall   = xczpage             ; if nonzero, don't show all settings
 myidx     = showall+1           ; index variable
 mytemp    = myidx+1             ; temp for use in setting/showing/misc
-mytemp1   = mytemp+1
+mytemp1   = mytemp+2            ; temp for Disk II check
+savex     = mytemp1+2           ; place to save x reg
+savey     = savex+1             ; place to save y reg
 
 ;cout      = $fded
 prbyte    = $fdda
@@ -78,13 +87,12 @@ exiterr:  lda   #$ff
 ; meat and potatoes now follow
           jsr   fcdetect
           bcc   doit
-          bcs   doit            ; TESTING!
           lda   #$01
           jsr   xredirect
           jsr   xmess
           asc_hi "No FastChip detected!"
           .byte $8d,$00
-          jmp   exiterr
+;          jmp   exiterr         ; comment out for basic emulator testing
 doit:     lda   #$00
           sta   showall
           jsr   try_all
@@ -95,6 +103,8 @@ doit:     lda   #$00
 
 ; Try all config setting options
 .proc     try_all
+          php
+          sei
           jsr   fcunlock
           jsr   try_state
           jsr   try_speed
@@ -103,6 +113,7 @@ doit:     lda   #$00
           jsr   try_joystick
           jsr   try_backlight
           jsr   fclock
+          plp
           rts
 .endproc
 
@@ -115,7 +126,7 @@ doit:     lda   #$00
           cpy   #$01
           bne   :+              ; want disable
           lda   #$01
-          sta   fcbase+1        ; enable
+          sta   fcenable        ; enable
           bne   diddone
 :         lda   #$01            ; anything but $a6 or $6a
           sta   fcbase          ; disable
@@ -131,8 +142,8 @@ done:     rts
           cpy   #41             ; too big?
           bcs   done
           lda   #CFG_SPEED
-          sta   fcbase+5        ; config reg
-          sty   fcbase+6        ; value
+          sta   fcregnum        ; config reg
+          sty   fcregval        ; value
           jsr   show_speed
           inc   showall
 done:     rts
@@ -141,8 +152,9 @@ done:     rts
 .proc     try_slots
           lda   #'p'|$80
           jsr   xgetparm_ch
-          bcs   done
-          sta   mytemp+1        ; save string pointer
+          bcc   :+
+          rts
+:         sta   mytemp+1        ; save string pointer
           sty   mytemp
           ldy   #$00
           sty   myidx           ; we'll keep calculated value here
@@ -155,8 +167,21 @@ lp:       lda   (mytemp),y      ; get char
           bcc   next            
           cmp   #'7'+1
           bcs   next
-          and   #$0f            ; get the bits we need to shift
-          tax
+          and   #$0f            ; get the bits containing slot #
+          jsr   is_disk_ii      ; check if Disk II
+          bcc   :+              ; nope, go ahead
+          sty   savey           ; otherwise, warn user
+          jsr   xmess
+          asc_hi "Not setting fast Disk II for slot "
+          .byte $00
+          ldy   savey
+          lda   (mytemp),y      ; get slot number back
+          ora   #$80            ; make printable
+          jsr   cout            ; print it
+          lda   #$8d            ; and cr
+          jsr   cout
+          jmp   next            ; go to next number
+:         tax
           lda   #$01
 :         asl                   ; shift left for the slot
           dex
@@ -167,8 +192,8 @@ next:     dey
           bne   lp
           ldy   myidx           ; get computed value
           lda   #CFG_SPEED
-          sta   fcbase+5        ; config reg
-          sty   fcbase+6        ; value
+          sta   fcregnum        ; config reg
+          sty   fcregval        ; value
           ;lda   #$00            ; DEBUG
           ;jsr   xprdec_2        ; DEBUG
           jsr   show_slots
@@ -183,8 +208,8 @@ done:     rts
           cpy   #05             ; too big?
           bcs   done
           lda   #CFG_SPKR
-          sta   fcbase+5        ; config reg
-          sty   fcbase+6        ; value
+          sta   fcregnum        ; config reg
+          sty   fcregval        ; value
           jsr   show_speaker
           inc   showall
 done:     rts
@@ -197,8 +222,8 @@ done:     rts
           cpy   #03            ; too big?
           bcs   done
           lda   #CFG_JSTCK
-          sta   fcbase+5        ; config reg
-          sty   fcbase+6        ; value
+          sta   fcregnum        ; config reg
+          sty   fcregval        ; value
           jsr   show_joystick
           inc   showall
 done:     rts
@@ -211,8 +236,8 @@ done:     rts
           cpy   #06            ; too big?
           bcs   done
           lda   #CFG_LIGHT
-          sta   fcbase+5        ; config reg
-          sty   fcbase+6        ; value
+          sta   fcregnum        ; config reg
+          sty   fcregval        ; value
           jsr   show_backlight
           inc   showall
 done:     rts
@@ -220,6 +245,8 @@ done:     rts
 
 ; Show all current settings
 .proc     show_all
+          php
+          sei
           jsr   fcunlock
           jsr   show_state
           jsr   show_speed
@@ -230,6 +257,7 @@ done:     rts
           jsr   show_slinky
           jsr   show_aux
           jsr   fclock
+          plp
           rts
 .endproc
 
@@ -237,12 +265,12 @@ done:     rts
           jsr   xmess
           asc_hi "FastChip: "
           .byte $00
-          lda   fcbase+1
+          lda   fcenable
           rol
           rol
           and   #$01
           jsr   pr_onoff
-:         lda   #$8d
+          lda   #$8d
           jsr   cout
           rts        
 .endproc
@@ -252,8 +280,8 @@ done:     rts
           asc_hi "Speed: "
           .byte $00
           lda   #CFG_SPEED
-          sta   fcbase+5        ; config reg
-          lda   fcbase+6        ; get speed
+          sta   fcregnum        ; config reg
+          lda   fcregval        ; get speed
           pha                   ; save it
           tay                   ; and put in y for printing
           lda   #$00            ; high byte for printing
@@ -277,8 +305,8 @@ done:     rts
           asc_hi "Slots: "
           .byte $00
           lda   #CFG_SLOTS
-          sta   fcbase+5
-          lda   fcbase+6
+          sta   fcregnum
+          lda   fcregval
           lsr                   ; slot zero bit unused
           sta   temp
           lda   #'1'|$80
@@ -307,8 +335,8 @@ lp:       jsr   cout            ; myidx reloaded at end of loop
           asc_hi "Speaker: "
           .byte $00
           lda   #CFG_SPKR
-          sta   fcbase+5
-          ldx   fcbase+6
+          sta   fcregnum
+          ldx   fcregval
           bne   :+
           jsr   pr_off
           lda   #$8d
@@ -349,8 +377,8 @@ lp:       jsr   cout            ; myidx reloaded at end of loop
           asc_hi "Joystick: "
           .byte $00
           lda   #CFG_JSTCK
-          sta   fcbase+5
-          ldx   fcbase+6
+          sta   fcregnum
+          ldx   fcregval
           bne   :+
           jsr   pr_off
           lda   #$8d
@@ -379,8 +407,8 @@ lp:       jsr   cout            ; myidx reloaded at end of loop
           asc_hi "Backlight: "
           .byte $00
           lda   #CFG_LIGHT
-          sta   fcbase+5
-          ldx   fcbase+6
+          sta   fcregnum
+          ldx   fcregval
           bne   :+
           jsr   pr_off
           lda   #$8d
@@ -427,15 +455,15 @@ lp:       jsr   cout            ; myidx reloaded at end of loop
           asc_hi "Slinky: "
           .byte $00
           lda   #CFG_RFENA
-          sta   fcbase+5
-          lda   fcbase+6
+          sta   fcregnum
+          lda   fcregval
           jsr   pr_onoff
           jsr   xmess
           asc_hi ", slot "
           .byte $00
           lda   #CFG_RFSLT
-          sta   fcbase+5
-          ldy   fcbase+6
+          sta   fcregnum
+          ldy   fcregval
           lda   #$00
           jsr   xprdec_2
           lda   #$8d
@@ -448,8 +476,8 @@ lp:       jsr   cout            ; myidx reloaded at end of loop
           asc_hi "Aux RAM: "
           .byte $00
           lda   #CFG_RWENA
-          sta   fcbase+5
-          lda   fcbase+6
+          sta   fcregnum
+          lda   fcregval
           jsr   pr_onoff
           lda   #$8d
           jsr   cout
@@ -459,34 +487,41 @@ lp:       jsr   cout            ; myidx reloaded at end of loop
 ; detect fastchip //e.  If present, return carry clear
 ; otherwise return carry set.
 .proc     fcdetect
+          php
+          sei
           jsr   fcunlock
-          lda   fcbase+1        ; current state
+          lda   fcenable        ; current state
           php                   ; save it (S flag)
-          sta   fcbase+1        ; enable FC
-          lda   fcbase+1        ; now see if it's there
+          sta   fcenable        ; enable FC
+          lda   fcenable        ; now see if it's there
           bpl   notfound        ; bit 7 set if present and enabled
-          ldy   fcbase+4        ; speed reg
-          lda   #$21            ; 5.0 MHz 
-          sta   fcbase+4
-          eor   fcbase+4        ; should be 0 now
-          sty   fcbase+4        ; restore value
+          ldy   fcspeed         ; speed reg
+          iny                   ; increment
+          tya                   ; put in accum
+          dey                   ; fix value back for later restore
+          and   #$1f            ; at this point value is not what we read out
+          sta   fcspeed         ; set speed reg
+          eor   fcspeed         ; a should be 0 now
+          sty   fcspeed         ; restore value
           bne   notfound        ; or not found
-          sta   fcbase+5        ; config register select, 0 = speed
-          ldx   fcbase+6        ; config register data
-          eor   fcbase+4        ; should be 0 again
-          bne   notfound        ; if not, no fastchip
+          sta   fcregnum        ; config register select, 0 = speed
+          cpy   fcregval        ; config register data, saved speed
+          bne   notfound        ; no match, no fastchip
           ; at this point we have a high degree of confidence that FC is there
           plp                   ; get initial state
           bpl   setslow         ; was it disabled?
           bmi   found
 setslow:  sta   fcbase          ; a=0 from above; disable it
-found:    jsr   fclock
-          clc
+found:    jsr   fclock          ; lock it back up
+          plp                   ; restore IRQs
+          clc                   ; indicate found
           rts
-notfound: plp                   ; clean stack and get orig 
-          sec
+notfound: plp                   ; clean stack
+          plp                   ; restore IRQs
+          sec                   ; indicate not found
           rts
 .endproc
+
 .proc     fcunlock
           lda   #UNLOCKV
           sta   fcbase
@@ -495,11 +530,13 @@ notfound: plp                   ; clean stack and get orig
           sta   fcbase
           rts
 .endproc
+
 .proc     fclock
           lda   #LOCKV
           sta   fcbase
           rts
 .endproc
+
 .proc     listspeeds
           lda   #$00
           sta   num+2           ; clear upper bytes of num
@@ -534,6 +571,7 @@ done:     jsr   xmess
           rts
 tabstops: .byte 0,30,20,10
 .endproc
+
 ; print fastchip speed in MHz from value in A
 ; returns carry clear if a number was printed
 ; carry set otherwise
@@ -545,8 +583,7 @@ tabstops: .byte 0,30,20,10
           asl
           tax
           ldy   spdtab,x        ; MHz
-          inx
-          lda   spdtab,x        ; decimal
+          lda   spdtab+1,x      ; decimal
           pha                   ; save it
           lda   #$00
           jsr   xprdec_2        ; print MHz in AY
@@ -580,12 +617,14 @@ spdtab:   .byte 0,0,0,2,0,3
           .byte 7,1,8,3,10,0
           .byte 12,5,16,6
 .endproc
+
 .proc     pr_err
           jsr xmess
           asc_hi "Err!"
           .byte $00
           rts
 .endproc
+
 .proc     pr_onoff
           ora   #$00
           beq   pr_off
@@ -596,28 +635,37 @@ spdtab:   .byte 0,0,0,2,0,3
           .byte $00
           rts
 .endproc
+
 .proc     pr_off
           jsr   xmess
           asc_hi "Off"
           .byte $00
           rts
 .endproc
+
 ; check slot referenced by A, set carry if disk II, clear carry if not
+; saves all regs
 .proc     is_disk_ii
+          pha
+          stx   savex
+          sty   savey
           ora   #$c0
-          sta   mytemp+1
+          sta   mytemp1+1
           lda   #$00
-          sta   mytemp
+          sta   mytemp1
           ldx   #$03
 :         ldy   idloc,x
-          lda   (mytemp),y
+          lda   (mytemp1),y
           cmp   idval,x
           bne   :+
           dex
           bpl   :-
           sec
-          rts
+          bcs   getxy
 :         clc
+getxy:    ldx   savex
+          ldy   savey
+          pla
           rts
 idloc:    .byte $01,$03,$05,$ff
 idval:    .byte $20,$00,$03,$00
