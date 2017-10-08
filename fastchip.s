@@ -1,7 +1,7 @@
 ; %help
 ; fastchip -- Control A2Heaven FastChip //e
 ;
-; THIS PROGRAM IS ALPHA AND DOESN'T WORK YET!
+; THIS PROGRAM IS BETA, SOME THINGS MAY NOT WORK!
 ;
 ; options:
 ;   -l        List speeds and exit
