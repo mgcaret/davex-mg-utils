@@ -5,15 +5,17 @@
 ;
 ; options:
 ;   -l        List speeds and exit
-;   -e <num>  Enable FastChip, 1 = on, 0 = off (sync)
 ;   -s <num>  Set speed, 0-40, see -l for list of speed values
+;             Setting speed to 0 (off) causes a reboot.
 ;   -p <str>  Set slot speeds, slot numbers in str are set to fast, rest slow
 ;             To set all slow, use -p 0.  Will not set Disk IIs to fast.
 ;   -a <num>  Set audio (speaker) delay, 0-4 (Off/Fast/Normal/Music/Hifi)
 ;   -j <num>  Set joystick delay, 0-2 (Off/Short/Long)
 ;   -b <num>  Set backlight, 0-5 (Off/Fade/Speed/R/G/B)
+;   -y        Answer reboot y/n questions with yes
 ;
-; Invalid values are silently ignored.
+; Invalid values are silently ignored.  Settings that will cause a reboot
+; will be confirmed unless -y is given.
 ;
 ; No options: List current settings
 ; %hend
@@ -55,12 +57,12 @@ prbyte    = $fdda
           DX_info $01,$12,dx_cc_iie_or_iigs,$00
           DX_ptab
           DX_parm 'l',t_nil     ; list speeds
-          DX_parm 'e',t_int1    ; enable/disable
           DX_parm 's',t_int1    ; speed
           DX_parm 'p',t_string  ; slot speeds
           DX_parm 'a',t_int1    ; speaker delay
           DX_parm 'j',t_int1    ; joystick delay
           DX_parm 'b',t_int1    ; backlight
+          DX_parm 'y',t_nil     ; force yes
           DX_end_ptab
           DX_desc "Control FastChip //e."
           DX_main
@@ -92,7 +94,7 @@ exiterr:  lda   #$ff
           jsr   xmess
           asc_hi "No FastChip detected!"
           .byte $8d,$00
-;          jmp   exiterr         ; comment out for basic emulator testing
+          jmp   exiterr         ; comment out for basic emulator testing
 doit:     lda   #$00
           sta   showall
           jsr   try_all
@@ -106,7 +108,7 @@ doit:     lda   #$00
           php
           sei
           jsr   fcunlock
-          jsr   try_state
+          sta   fcenable
           jsr   try_speed
           jsr   try_slots
           jsr   try_speaker
@@ -117,36 +119,27 @@ doit:     lda   #$00
           rts
 .endproc
 
-.proc     try_state
-          lda   #'e'|$80
-          jsr   xgetparm_ch
-          bcs   done
-          cpy   #$02            ; too big?
-          bcs   done
-          cpy   #$01
-          bne   :+              ; want disable
-          lda   #$01
-          sta   fcenable        ; enable
-          bne   diddone
-:         lda   #$01            ; anything but $a6 or $6a
-          sta   fcbase          ; disable
-diddone:  jsr   show_state
-          inc   showall
-done:     rts
-.endproc
-
 .proc     try_speed
           lda   #'s'|$80
           jsr   xgetparm_ch
           bcs   done
+          cpy   #0
+          beq   disable
           cpy   #41             ; too big?
           bcs   done
-          lda   #CFG_SPEED
+doset:    lda   #CFG_SPEED
           sta   fcregnum        ; config reg
           sty   fcregval        ; value
-          jsr   show_speed
+noset:    jsr   show_speed
           inc   showall
 done:     rts
+disable:  lda   #'y'|$80
+          jsr   xgetparm_ch
+          bcc   :+
+          jsr   ask_reboot
+          beq   noset
+:         ldy   #0
+          beq   doset
 .endproc
 
 .proc     try_slots
@@ -245,10 +238,15 @@ done:     rts
 
 ; Show all current settings
 .proc     show_all
+          jsr xmess
+          asc_hi "FastChip //e"
+          .byte $8d
+          asc_hi "------------"
+          .byte $8d,$00
           php
           sei
           jsr   fcunlock
-          jsr   show_state
+          sta   fcenable
           jsr   show_speed
           jsr   show_slots
           jsr   show_speaker
@@ -259,20 +257,6 @@ done:     rts
           jsr   fclock
           plp
           rts
-.endproc
-
-.proc     show_state
-          jsr   xmess
-          asc_hi "FastChip: "
-          .byte $00
-          lda   fcenable
-          rol
-          rol
-          and   #$01
-          jsr   pr_onoff
-          lda   #$8d
-          jsr   cout
-          rts        
 .endproc
 
 .proc     show_speed
@@ -489,10 +473,8 @@ lp:       jsr   cout            ; myidx reloaded at end of loop
 .proc     fcdetect
           php
           sei
-          jsr   fcunlock
-          lda   fcenable        ; current state
-          php                   ; save it (S flag)
-          sta   fcenable        ; enable FC
+          jsr   fcunlock        ; unlock
+          sta   fcenable        ; enable FC registers
           lda   fcenable        ; now see if it's there
           bpl   notfound        ; bit 7 set if present and enabled
           ldy   fcspeed         ; speed reg
@@ -508,16 +490,11 @@ lp:       jsr   cout            ; myidx reloaded at end of loop
           cpy   fcregval        ; config register data, saved speed
           bne   notfound        ; no match, no fastchip
           ; at this point we have a high degree of confidence that FC is there
-          plp                   ; get initial state
-          bpl   setslow         ; was it disabled?
-          bmi   found
-setslow:  sta   fcbase          ; a=0 from above; disable it
-found:    jsr   fclock          ; lock it back up
+          jsr   fclock          ; lock it back up
           plp                   ; restore IRQs
           clc                   ; indicate found
           rts
-notfound: plp                   ; clean stack
-          plp                   ; restore IRQs
+notfound: plp                   ; restore IRQs
           sec                   ; indicate not found
           rts
 .endproc
@@ -616,6 +593,21 @@ spdtab:   .byte 0,0,0,2,0,3
           .byte 5,0,5,5,6,2
           .byte 7,1,8,3,10,0
           .byte 12,5,16,6
+.endproc
+
+.proc     ask_reboot
+          lda   #$01
+          jsr   xredirect
+          jsr   xmess
+          asc_hi "Apply setting and reboot"
+          .byte $00
+          lda   #'n'|$80
+          jsr   xyesno2
+          php
+          lda   #$ff
+          jsr   xredirect
+          plp                   ; restore z flag
+          rts
 .endproc
 
 .proc     pr_err
