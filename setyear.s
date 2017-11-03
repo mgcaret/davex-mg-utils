@@ -17,7 +17,7 @@ tmp       = xczpage
 year      = tmp+1
 count     = year+1
 
-prbyte	  = $fdda
+prbyte    = $fdda
 ;cout      = $fded
 
           DX_start dx_mg_auto_origin ; load address
@@ -43,29 +43,29 @@ prbyte	  = $fdda
           bcs   :+              ; not given, do it
           rts
           ; see if we can patch the driver
-:         lda		$c08b
-          lda		$c08b
-          ldx		#$03
-:					lda		$d7b4,x					; tdays table, at september
-          cmp		tdaysv,x				; that what ProDOS has?
-          bne		setyterr				; not the thunderclock driver
+:         lda   $c08b
+          lda   $c08b
+          ldx   #$03
+:         lda   $d7b4,x         ; tdays table, at september
+          cmp   tdaysv,x        ; that what ProDOS has?
+          bne   setyterr        ; not the thunderclock driver
           dex
-          bpl		:-
+          bpl   :-
           ; go ahead and patch  
-          ldx		#6
-:					lda   yeartab,x
-          sta		$d7b8,x					; address of year table in P8
+          ldx   #6
+:         lda   yeartab,x
+          sta   $d7b8,x         ; address of year table in P8
           dex
-          bpl		:-
-          bit		$c082						; ROM back before exit
+          bpl   :-
+          bit   $c082           ; ROM back before exit
           rts
-setyterr:	bit		$c082						; ROM back before death
-          lda		#$01
-          jsr 	xredirect
-          jsr		xmess
+setyterr: bit   $c082           ; ROM back before death
+          lda   #$01
+          jsr   xredirect
+          jsr   xmess
           asc_hi "Can't patch clock driver!"
           .byte $00
-          jmp		exiterr
+          jmp   exiterr
 badparms: lda   #$01
           jsr   xredirect
           jsr   xmess
@@ -149,7 +149,7 @@ dayidx:   .byte 1,0,6,5,4,3,2   ; MonSunSatFriThuWedTue
 ; Table we will copy into ProDOS
 yeartab:  .res  7,$ff
 ; table to validate the P8 tclock driver, 4 bytes at $d7b4
-tdaysv:		.byte 242,20,51,81
+tdaysv:   .byte 242,20,51,81
 ; adapted from http://6502.org/source/misc/dow.htm
 ; inputs: y = year (0-255 = 1900-2155)
 ;         x = month
@@ -175,6 +175,6 @@ march:    eor #$7f              ; invert a so carry works right
 mod7:     adc #7                ; returns (a+3) modulo 7
           bcc mod7              ; for a in 0..255
           rts
-mtab:     .byte 1,5,6,3,1,5,3,0,4,2,6,4   	; month offsets
+mtab:     .byte 1,5,6,3,1,5,3,0,4,2,6,4     ; month offsets
 .endproc
           DX_end
