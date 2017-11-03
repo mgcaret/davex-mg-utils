@@ -80,6 +80,10 @@ Optionally, use undocumented features to display the user-selected startup slot.
 
 View the contents of the Apple IIc Plus MIG RAM.
 
+#### setyear
+
+Patches the ProDOS ThunderClock driver year table in-memory.
+
 ## Building
 
 Building the utilities requires a Unix-like environment with GNU Make and the usual set of Unix utilities such as sed, awk, egrep, etc.
