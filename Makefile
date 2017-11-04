@@ -45,5 +45,5 @@ DAVEX.MG.SHK: $(MG_CMDS)
 .PHONY: clean
 clean:
 	rm -f *.o *.p8c *.lst *.map davex.mg.po DAVEX.MG.SHK help/*
-	rmdir help
+	if [ -d help ]; then rmdir help; fi
 
