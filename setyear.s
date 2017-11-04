@@ -88,7 +88,7 @@ exiterr:  lda   #$ff
 yloop:    lda   year
           cmp   #40             ; 40 or greater?
           bcs   :+              ; Do not adjust for 1940-1999
-          adc   #100            ; add 100 years for 2000-2040   
+          adc   #100            ; add 100 years for 2000-2039   
 :         tay                   ; year
           lda   #1              ; day
           tax                   ; month
