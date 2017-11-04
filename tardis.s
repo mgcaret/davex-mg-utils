@@ -2,13 +2,14 @@
 ; tardis - Get date/time from TimeLord server.
 ;
 ; options:
-;  -v             Verbose mode, prints server info.
+;  -v             Verbose mode, prints server info
 ;  -n <nbp-name>  Specify NBP query, default =:TimeLord@*
-;  -p             Set ProDOS global page date/time.
+;  -p             Set ProDOS global page date/time
+;  -y             Patch ProDOS year table to use returned year
 ;  -s <type>      Set a clock of <type>, current supported
-;                 types: none.
-;  -e <hours>			Adjust time eastward.
-;  -w <hours>			Adjust time westward.
+;                 types: none
+;  -e <hours>     Adjust time eastward
+;  -w <hours>     Adjust time westward
 ; %hend
 
 .pc02
@@ -21,11 +22,13 @@ NBPBuf    = filebuff3           ; buffer for NBP request
 NBPBufSz  = $0400               ; size of the file buffer
 
 P8DtTm    = $bf90
+prbyte    = $fdda
 
 sptr      = xczpage
 sptr2     = sptr+2
 stemp     = sptr2+2
 verbose   = stemp+1             ; verbose flag
+seconds   = verbose+1           ; holds seconds
 
           DX_start dx_mg_auto_origin ; load address
           DX_info $02,$12,dx_cc_iie_or_iigs,$00
@@ -34,9 +37,10 @@ verbose   = stemp+1             ; verbose flag
           DX_parm 'n',t_string  ; name
           DX_parm 'z',t_string  ; zone
           DX_parm 'p',t_nil     ; set prodos time
+          DX_parm 'y',t_nil     ; patch year table
           DX_parm 's',t_string  ; set clock
-          DX_parm 'e',t_int1		; east adjust
-          DX_parm 'w',t_int1		; west adjust
+          DX_parm 'e',t_int1    ; east adjust
+          DX_parm 'w',t_int1    ; west adjust
           DX_end_ptab
           DX_desc "Get time from TimeLord server."
           DX_main
@@ -144,8 +148,22 @@ exiterr1: jmp   exiterr
 :         lda   #$01
           sta   ATPbmap
           ATcall ATPparms
-          bcc		:+
-          jmp   notime         ; if error, bail now
+          bcc   :+
+          jmp   notime          ; if error, bail now
+          ; see if verbose
+:         lda   #'v'|$80
+          jsr   xgetparm_ch
+          bcs   :++             ; skip if not verbose
+          ; display raw time in hex in little-endian format
+          ldx   #$03
+:         lda   To,x
+          phx
+          jsr   prbyte
+          plx
+          dex
+          bpl   :-
+          lda   #$8d
+          jsr   cout
           ; now do big-endian subtraction of the base offset
           ; and simultaneously put the computed value in From
 :         sec
@@ -156,11 +174,11 @@ exiterr1: jmp   exiterr
           dex
           bpl   :-
           ; Apply user-requested adjustments:
-					lda 	#'e'|$80
-					jsr		xgetparm_ch
-					bcs		ckwest
-					cpy		#$01
-					bcc		ckwest
+          lda   #'e'|$80
+          jsr   xgetparm_ch
+          bcs   ckwest
+          cpy   #$01
+          bcc   ckwest
           ; now do big-endian addition of eastward adjustment
 :         clc
           ldx   #$03
@@ -170,13 +188,13 @@ exiterr1: jmp   exiterr
           dex
           bpl   :-
           dey
-          bne		:--					
-ckwest:		lda 	#'w'|$80
-					jsr		xgetparm_ch
-					bcs		convert
-					cpy		#$01
-					bcc		convert
-					; do big-endian subtraction of westward adjustment
+          bne   :--         
+ckwest:   lda   #'w'|$80
+          jsr   xgetparm_ch
+          bcs   convert
+          cpy   #$01
+          bcc   convert
+          ; do big-endian subtraction of westward adjustment
 :         sec
           ldx   #$03
 :         lda   From,x
@@ -185,10 +203,69 @@ ckwest:		lda 	#'w'|$80
           dex
           bpl   :-
           dey
-          bne		:--
+          bne   :--
           ; Use the WS card to convert value in From to ProDOS format in To
 convert:  ATcall CvtParms
-          bcs   notime          ; bail if error
+          bcs   notime1         ; bail if error
+          ATcall ResetSec       ; sigh... weird firmware
+          bcs   notime1
+          ; calculate seconds
+          ; Copy converted values to the other convert parm list
+          ldx   #$03
+:         lda   To,x
+          sta   SecFrom,x
+          dex
+          bpl   :-
+          inc   CvtDir
+          ATcall CvtParms
+          ; call Convert again the other direction
+          ATcall SecParms
+          bcc   :+
+notime1:  jmp   notime          ; bail if error
+          ; value in SecTo is less than or equal to From and no more than 59
+          ; secs different
+:         lda   From+3
+          sec
+          sbc   SecTo+3
+          sta   seconds
+          ; set Prodos date/time if asked
+          lda   #'p'|$80        ; set prodos date/time?
+          jsr   xgetparm_ch
+          bcs   nosetp8         ; skip if -p not given
+          ; Copy converted values to the global page
+          ldx   #$03
+:         lda   To,x
+          sta   P8DtTm,x
+          dex
+          bpl   :-
+          ; patch year table?
+nosetp8:  lda   #'y'|$80
+          jsr   xgetparm_ch
+          bcs   nosetyt
+          lda   $c08b
+          lda   $c08b
+          ldx   #$03
+:         lda   $d7b4,x         ; tdays table, at september
+          cmp   tdaysv,x        ; that what ProDOS has?
+          bne   setyterr        ; not the thunderclock driver
+          dex
+          bpl   :-
+          lda   To+1            ; year (b7-1), upper bit of month (b0)
+          lsr
+          ldx   #6
+:         sta   $d7b8,x         ; address of year table
+          dex
+          bpl   :-
+          bit   $c082           ; ROM back
+          bra   nosetyt
+setyterr: bit   $c082           ; ROM back
+          lda   #$01
+          jsr   xredirect
+          jsr   xmess
+          asc_hi "Can't patch clock driver!"
+          .byte $00
+          bra   exiterr
+nosetyt:  ; TODO: set NSC or ThunderClock or something
           ; Display date/time
           ldy   To
           lda   To+1
@@ -200,18 +277,19 @@ convert:  ATcall CvtParms
           lda   To+3
           jsr   xpr_time_ay
           jsr   xmess
+          asc_hi " +"
+          .byte $00
+          ldy   seconds
+          cpy   #10
+          bcs   :+
+          lda   #'0'|$80
+          jsr   cout            ; leading zero
+:         ldy   seconds
+          lda   #$00            ; zero high byte
+          jsr   xprdec_2        ; print seconds
+          jsr   xmess
+          .byte "s"
           .byte $8d,$00
-          ; set Prodos date/time if asked
-          lda   #'p'|$80        ; set prodos date/time?
-          jsr   xgetparm_ch
-          bcs   nosetp8         ; skip if -p not given
-          ; Copy converted values to the global page
-          ldx   #$03
-:         lda   To,x
-          sta   P8DtTm,x
-          dex
-          bpl   :-          
-nosetp8:  ; TODO: set NSC or ThunderClock or something
           rts
 notime:   lda   #$01
           jsr   xredirect
@@ -435,24 +513,24 @@ next:     lda   #$01
 ; a,x = source
 ; return: y = new offset after copied str
 .proc     copystr
-		      sta	  sptr2+1
-          stx	  sptr2
-		      sty	  stemp           ; save offset
-		      ldy	  #$00
-		      lda	  (sptr2),y       ; get number of chars
-		      tax                   ; to copy
-		      ldy	  stemp           ; get the offset
-		      sta	  (sptr),y        ; store the length byte
-		      inc	  stemp           ; increment the offset
-		      inc	  sptr2           ; next source char
-		      bne	  :+
-		      inc	  sptr2+1
-:         ldy	#0
+          sta   sptr2+1
+          stx   sptr2
+          sty   stemp           ; save offset
+          ldy   #$00
+          lda   (sptr2),y       ; get number of chars
+          tax                   ; to copy
+          ldy   stemp           ; get the offset
+          sta   (sptr),y        ; store the length byte
+          inc   stemp           ; increment the offset
+          inc   sptr2           ; next source char
+          bne   :+
+          inc   sptr2+1
+:         ldy #0
           ; copy loop
 :         phy
-		  		lda	  (sptr2),y
-          ldy	  stemp
-          sta	  (sptr),y
+          lda   (sptr2),y
+          ldy   stemp
+          sta   (sptr),y
           inc   stemp
           ply
           iny
@@ -461,6 +539,9 @@ next:     lda   #$01
           ldy   stemp
           rts
 .endproc
+;
+; table to validate the P8 tclock driver, 4 bytes at $d7b4
+tdaysv:   .byte 242,20,51,81
 ;
 inforeq:  .byte 0,2             ; sync GetInfo
           .word $0000           ; result code
@@ -476,9 +557,9 @@ deftype:  .byte 8,"TimeLord"    ; type
 defzone:  .byte 1,"*"           ; zone
 ; Base offset for epoch conversion, in big-endian order
 ;Base:     .byte $B4,$93,$56,$70 ; PDT
-Base:    	.byte $b4,$92,$f4,$00	; GMT - set timezone or use adjust options
+Base:     .byte $b4,$92,$f4,$00 ; GMT - set timezone or use adjust options
 ; Hours adjustment value
-Hour:			.byte $00,$00,$0e,$10	; 3600 seconds
+Hour:     .byte $00,$00,$0e,$10 ; 3600 seconds
 ; parameter list for NBPLookup
 lookup:   .byte 0,16            ; sync NBPLookup
           .word $0000           ; result
@@ -512,12 +593,25 @@ BDS:      .word $000c           ; 12-byte buffer for full response from TimeLord
           .dword From           ; Buffer pointer
 Status:   .dword $00000000      ; returned user bytes, first byte = 12 if OK
           .word $0000           ; actual length
-; Convert time paraameters
+; Convert time parameters - P8 to network for calculating seconds
+SecParms: .byte 0,$34           ; sync ConvertTime
+          .word $0000           ; result
+          .byte $01             ; 1 = ProDOS to AFP
+SecFrom:  .dword $00000000
+SecTo:    .dword $00000000
+; Convert time to reset seconds to 0 because the firmware saves the seconds
+; and reuses it when converting from P8 to network time.
+ResetSec: .byte 0,$34           ; sync ConvertTime
+          .word $0000           ; result
+          .byte $00             ; 0 = from AFP to ProDOS, 1 = reverse
+          .dword $00000000      ; BIG ENDIAN, Jan 1, 2000 12:00 AM GMT
+          .dword $00000000      ; P8 Time
+; Convert time parameters - network to P8
 ; note that ATP response is written to From
 CvtParms: .byte 0,$34           ; sync ConvertTime
           .word $0000           ; result
-          .byte $00             ; 0 = from AFP to ProDOS, 1 = reverse
+CvtDir:   .byte $00             ; 0 = from AFP to ProDOS, 1 = reverse
 From:     .dword $00000000      ; 
 To:       .dword $00000000      ; initially contains time from ATP response
-          .res  4               ; fill out remaining part of buffer
+          .res  4               ; fill out remaining part of ATP buffer
           DX_end
