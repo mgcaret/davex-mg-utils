@@ -7,7 +7,7 @@
 
 sptr      = xczpage
 altbuf    = filebuff3     ; if no dynamic mem avail
-altbufsz  = $04           ; pages
+altbufsz  = $02           ; pages
 
           DX_start dx_mg_auto_origin ; load address
           DX_info $01,$12,dx_cc_iie_or_iigs,$00
