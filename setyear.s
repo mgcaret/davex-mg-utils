@@ -17,7 +17,7 @@ tmp       = xczpage
 year      = tmp+1
 count     = year+1
 
-prbyte    = $fdda
+;prbyte    = $fdda
 ;cout      = $fded
 
           DX_start dx_mg_auto_origin ; load address

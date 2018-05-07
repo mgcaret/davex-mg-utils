@@ -21,10 +21,11 @@ I_MG_MAC    = 1
 ; *********
 
 .include  "Common/2/Globals2.asm"
+.include  "Common/2/Apple.Globals2.asm"
 .include  "Common/2/MLI.Globals2.asm"
-.include  "Common/2/Macros2.asm"
+.include  "Common/Macros.asm"
 
-cout      = $fded               ; character out
+;cout      = $fded               ; character out
 checkmach	= $fe1f	              ; clears carry on IIgs, no effect on //e
 
 p8_mli    = $bf00
@@ -133,8 +134,18 @@ X_DX_DESC: .byte   .strlen(Desc)
 .assert   (* - ext_start) < 512, warning, "Description must end in the first 512 bytes"
 .endmacro
 
-.macro    DX_main
-          X_DX_EXEC = *
+.macro    DX_main   Addr
+          .ifnblank Addr
+            .out .sprintf("Note: main code address at %s", .string(Addr))
+            X_DX_EXEC = Addr
+          .else
+            .ifconst *
+              .out .sprintf("Note: implied main code at * = $%x", *)
+            .else
+              .out .sprintf("Note: implied main code at DX_main")
+            .endif
+            X_DX_EXEC = *
+          .endif
 .endmacro
 
 .macro    DX_end

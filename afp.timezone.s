@@ -12,7 +12,7 @@
 
 sptr      = xczpage
 
-prbyte		= $fdda
+;prbyte		= $fdda
 ;cout      = $fded
 
 pfxbuf    = filebuff2

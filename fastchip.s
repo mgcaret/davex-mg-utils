@@ -20,6 +20,9 @@
 ; No options: List current settings
 ; %hend
 
+.p02
+.include  "davex-mg.inc"
+
 UNLOCKV   = $6a
 LOCKV     = $a6
 CFG_SPEED = $00
@@ -30,8 +33,6 @@ CFG_RFENA = $04
 CFG_RFSLT = $05
 CFG_RWENA = $06
 CFG_LIGHT = $07
-
-ch        = $24
 
 fcbase    = $c06a
 fcenable  = fcbase+1
@@ -46,12 +47,6 @@ mytemp    = myidx+1             ; temp for use in setting/showing/misc
 mytemp1   = mytemp+2            ; temp for Disk II check
 savex     = mytemp1+2           ; place to save x reg
 savey     = savex+1             ; place to save y reg
-
-;cout      = $fded
-prbyte    = $fdda
-
-.p02
-.include  "davex-mg.inc"
 
           DX_start dx_mg_auto_origin ; load address
           DX_info $01,$12,dx_cc_iie_or_iigs,$00

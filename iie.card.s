@@ -7,10 +7,11 @@
 ;   -x        Show experimental info, uses undocumented features.
 ; %hend
 
-curspeed  = xczpage
-
 .pc02
 .include  "davex-mg.inc"
+
+curspeed  = xczpage
+
 
           DX_start dx_mg_auto_origin ; load address
           DX_info $01,$12,dx_cc_iie_or_iigs,$00

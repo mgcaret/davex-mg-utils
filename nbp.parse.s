@@ -7,7 +7,7 @@
 .pc02
 .include  "davex-mg.inc"
 
-ch        = $24                 ; cursor horizontal pos
+;ch        = $24                 ; cursor horizontal pos
 
 sptr      = xczpage
 sptr2     = sptr+2

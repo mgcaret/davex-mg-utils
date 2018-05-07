@@ -15,14 +15,14 @@
 .pc02
 .include  "davex-mg.inc"
 
-ch        = $24                 ; cursor horizontal pos
+;ch        = $24                 ; cursor horizontal pos
 
 entname   = filebuff2           ; buffer to build NBP entity name
 NBPBuf    = filebuff3           ; buffer for NBP request
 NBPBufSz  = $0400               ; size of the file buffer
 
 P8DtTm    = $bf90
-prbyte    = $fdda
+;prbyte    = $fdda
 
 sptr      = xczpage
 sptr2     = sptr+2
