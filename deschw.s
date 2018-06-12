@@ -894,13 +894,37 @@ desSp1:	lda slot
 	ora #$c0
 	sta rom+1
 	jsr chk_smport
-	bcs desNotSP
-	jsr Descr1SP
+	bcs chk_hiddenSP
+	jsr Descr1SP	
 desNotSP:	inc slot
 	lda slot
 	cmp #8
 	bcc desSp1
 	rts
+; look for IIc Plus hidden smartport
+chk_hiddenSP:	
+	lda $fbbf
+	cmp #5
+	bne desNotSP
+	lda slot
+	cmp #6
+	bne desNotSP
+	lda $c64e
+	cmp #$38 ; sec
+	bne desNotSP
+	lda $c651
+	cmp #$18 ; clc
+	bne desNotSP
+	jsr xmess
+	asc "IIc Plus hidden SmartPort in slot 6."
+	.byte $8d,$00
+	lda #$c6
+	sta SpTrick+2
+	lda #$51
+	sta SpTrick+1
+	jsr SpDescr
+	jmp desNotSP
+	
 ;
 Descr1SP:
 	jsr xmess
@@ -923,6 +947,7 @@ Descr1SP:
 	lda rom+1
 	sta SpTrick+2
 ;
+SpDescr:
 	jsr SpStatus
 	jsr EachStatus
 	rts
