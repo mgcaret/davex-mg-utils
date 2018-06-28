@@ -58,6 +58,7 @@ BufPtr    = BufLoc+2
 MigPage   = BufPtr+2
 
 ; entry points
+COut      = $fded
 COut1     = $fdf0
 TabV      = $fb5b
 PrByte    = $fdda
@@ -161,7 +162,10 @@ godn:     inc   MigPage
           bra   dispmig
 :         cmp   #$9b            ; escape
           bne   jump
-          rts
+          lda   #18             ; make sure DaveX "hit a key"
+          jsr   TabV            ; is on a blank line
+          lda   #$8d            ; and displays properly
+          jmp   COut            ; CR and exit
 jump:     sbc   #$b0            ; check for digit for page jump
           bmi   uinput          ; nope
           cmp   #10             ; 10 or bigger?
