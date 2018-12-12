@@ -59,7 +59,7 @@ dx_desc_none = 0
 ; if the Load address is zero, we don't export X_DX_LOAD
 ; so that later we can calculate an appropriate start addr
 ; and let the linker do it.
-.macro    DX_start  Load
+.macro    DX_start  Load,Resv
           .ifdef DID_DX_start
             .warning "DX_start used more than once"
           .else
@@ -74,6 +74,13 @@ dx_desc_none = 0
             X_DX_AUTO_LOAD = 1
             .endif
             X_DX_LOAD := *
+            .ifblank Resv
+            X_DX_RESV = 0
+            .else
+            X_DX_RESV = Resv
+            .out .sprintf("Reserving %d bytes", Resv)
+            .endif
+            .export X_DX_RESV
 ext_start:
           rts
           .byte $ee, $ee
@@ -153,7 +160,7 @@ X_DX_DESC: .byte   .strlen(Desc)
             .error "DX_start not used"
           .endif
           X_DX_END = *
-          X_DX_SIZE = X_DX_END - X_DX_LOAD
+          X_DX_SIZE = X_DX_END - X_DX_LOAD + X_DX_RESV
           DID_YOU_DX_end = 1
           .ifndef DID_DX_info
             .error "DX_info not used"
@@ -169,11 +176,16 @@ X_DX_DESC: .byte   .strlen(Desc)
           X_DX_DESC := 0
           .endif
           .ifndef X_DX_AUTO_LOAD
-            .out .sprintf("Code ends at $%x, size $%x", X_DX_END, X_DX_SIZE)
+            .out .sprintf("Code ends at $%x, size $%x (%x resv)", X_DX_END, X_DX_SIZE, X_DX_RESV)
             .assert * < $b000, error, "Code is past $b000!"
-            .if * < $af00
+            .if (X_DX_END+X_DX_RESV) < $af00
               .out "Consider moving code start to place end shortly before $b000"
               .out .sprintf("Perhaps at $%x", ($b000-X_DX_SIZE)&$ff00)
+            .endif
+            .if (X_DX_END+X_DX_RESV) > $afff
+              .out "Code overruns available space, consider moving code start"
+              .out .sprintf("Perhaps at $%x", ($b000-X_DX_SIZE)&$ff00)
+              .error "Cannot continue"
             .endif
           .else
             .out .sprintf("Auto load address, size $%x", X_DX_SIZE)

@@ -63,7 +63,13 @@ else
     exit 4
   fi
   echo "Code size: ${CODE_SIZE}"
-  START=$(( (${END_FENCE} - ${CODE_SIZE}) / 256 * 256 ))
+  RESERVE=0
+  RESV=`${OD65} --dump-exports ${OBJECT_FILE} | awk -F'(' 'f{print substr(\$2,1,length(\$2)-1);f=0} /X_DX_RESV/{f=1}'`
+  if [ -n "${RESV}" ]; then
+    RESERVE="${RESV}"
+    echo "Reserve: ${RESERVE}"
+  fi
+  START=$(( (${END_FENCE} - ${CODE_SIZE} - ${RESERVE}) / 256 * 256 ))
   if [ -z "${START}" ]; then
     echo "Could not calculate a start address!"
     exit 4
