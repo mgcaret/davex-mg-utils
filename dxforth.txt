@@ -2,6 +2,11 @@ THIS DOCUMENT IS A WORK IN PROGRESS
 
 MG's Davex Forth is a Forth system implementing the Forth 2012 Core word set.
 
+This implementation runs under the Apple II Davex shell.  It requires a version
+of Davex that implements the xgetln2 call, which is documented on the project
+page, but does not actually exist.  You may contact me to get an experimental
+fork of Davex that does implement it.
+
 Additionally, the following are implemented:
 
 * The Exception word set.
