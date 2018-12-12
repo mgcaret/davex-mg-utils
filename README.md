@@ -58,6 +58,10 @@ There are also a few other enhancements around SmartPort device info.
 
 ### Misc
 
+#### diskinfo
+
+Display information on mounted disks/volumes.
+
 #### dmem
 
 Displays info on davex "dynamic memory."  Mainly for testing purposes.
@@ -83,6 +87,14 @@ View the contents of the Apple IIc Plus MIG RAM.
 #### setyear
 
 Patches the ProDOS ThunderClock driver year table in-memory.
+
+### Experimental
+
+#### dxforth
+
+This is a Forth 2012 implementation.  See dxforth.txt for more information.
+
+Caution: This will not work with a stock Davex as built from the Sourceforge project, as it uses the documented, but unimplemented, xgetln2 Davex call.  If you just want the other tools, remove dxforth.p8c from the Makefile.
 
 ## Building
 
