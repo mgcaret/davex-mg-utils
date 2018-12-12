@@ -179,7 +179,7 @@ lp:       lda   (mytemp),y      ; get char
 next:     dey
           bne   lp
           ldy   myidx           ; get computed value
-          lda   #CFG_SPEED
+          lda   #CFG_SLOTS
           sta   fcregnum        ; config reg
           sty   fcregval        ; value
           ;lda   #$00            ; DEBUG
