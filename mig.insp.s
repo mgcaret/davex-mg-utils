@@ -71,6 +71,8 @@ PrntAX    = $f941
 CH        = $24
 CV        = $25
 AltBuffer = filebuff3         ; if we can't get big buffer
+KBD       = $c000
+KBDSTRB   = $c010
 ROMBank   = $c028
 MigBase   = $ce00
 MigRAM    = MigBase
@@ -122,9 +124,9 @@ init:     stz   MigPage
           sta   BufLoc+1
           dec   BufFlag         ; flag it
 :         ; moving on...        
-          ; davex does the below for us
-          ;lda   #$91
-          ;jsr   COut1           ; go to 40 cols if 80 col firmware active
+          ; davex sets us to 40 col, so don't need this
+;          lda   #$91
+;          jsr   COut1           ; go to 40 cols if 80 col firmware active
           jsr   Home
           lda   #21
           jsr   TabV
@@ -142,8 +144,16 @@ init:     stz   MigPage
           jsr   PrntAX
 dispmig:  jsr   get4mig         ; 4 mig pages to buffer
           jsr   d4page
-uinput:   lda   #' '+$80
+uinput:   
+.if 1                           ; set zero to read kbd directlu
+          lda   #' '|$80
           jsr   xrdkey          ; davex read key
+.else
+          jsr   xpoll_io
+          lda   KBD
+          bpl   uinput
+          bit   KBDSTRB
+.endif
           cmp   #$8b            ; up arrow
           beq   goup
           cmp   #$8a            ; down arrow
@@ -156,7 +166,7 @@ goup:     dec   MigPage
           bne   :+
 godn:     inc   MigPage
           bra   dispmig
-:         cmp   #'~'+$80        ; tilde - git all MIG RAM to buffer, maybe
+:         cmp   #'~'|$80        ; tilde - git all MIG RAM to buffer, maybe
           bne   :+
           jsr   getallmig
           bra   dispmig
@@ -164,9 +174,11 @@ godn:     inc   MigPage
           bne   jump
           lda   #18             ; make sure DaveX "hit a key"
           jsr   TabV            ; is on a blank line
-          lda   #$8d            ; and displays properly
-          jmp   COut            ; CR and exit
-jump:     sbc   #$b0            ; check for digit for page jump
+          jsr   xmess
+          .byte $8d,$00
+          rts
+jump:     sec
+          sbc   #$b0            ; check for digit for page jump
           bmi   uinput          ; nope
           cmp   #10             ; 10 or bigger?
           bcs   uinput          ; also nope
