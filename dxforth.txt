@@ -1,0 +1,467 @@
+THIS DOCUMENT IS A WORK IN PROGRESS
+
+MG's Davex Forth is a Forth system implementing the Forth 2012 Core word set.
+
+Additionally, the following are implemented:
+
+* The Exception word set.
+* The following words from the Core Extensions word set:
+    .( .R U.R 2>R 2R> 2R@ :NONAME AGAIN BUFFER: C" COMPILE, DEFER DEFER! DEFER@
+    ERASE FALSE HEX MARKER NIP PAD PARSE PARSE-NAME PICK REFILL
+    RESTORE-INPUT SAVE-INPUT SOURCE-ID TO TRUE TUCK U> UNUSED VALUE WITHIN \
+* The following words from the Double Number word set:
+    DABS DNEGATE D. D.R
+* The Facility word set.
+* The following words from the Programming-Tools word set:
+    .S ? WORDS
+* The following words from the Programming-Tools extension word set:
+    BYE STATE
+* The following words from the String word set:
+    BLANK
+* Words supporting the Apple II+ProDOS+Davex environment (documented below)
+
+Implementation-defined options (Forth 2012 4.1.1):
+
+  * No address alignment is required for cells or characters.
+  * EMIT sends non-printing characters to the output device.
+  * ACCEPT allows all editing that Davex allows, except for history.
+  * The character set is the Apple II normal character set.
+    Characters are stored high-bit OFF.
+  * There are no charater set extensions.
+  * Control characters match a space character in PARSE-NAME only.
+  * The control-flow stack is implemented on the parameter stack as addresses
+    to be resolved later by words that consume them.
+  * Digits larger than 35 convert to lower-case letters.  If BASE is larger
+    than 35, number parsing becomes case-sensitive.
+  * After input terminates, the cursor is on the beginning of the next line.
+    If no exception occurs, after the line is executed, the system will display
+    the sytem prompt.
+  * When an exception occurs outside of CATCH, the system will display the
+    exception number, will forget any current word being defined, and
+    resume user input through QUIT.
+  * The input line terminator is the carriage return.
+  * The maximum size of a counted string is 255 characters.
+  * The maximum size of a parsed string is limited by memory for PARSE and
+    PARSE-NAME, and 34 characters for WORD.
+  * The maximum size of a definition name is 16 characters.
+  * ENVIRONMENT? never returns anything but false.
+  * The user input device is the keyboard unless redirected by Davex.
+  * The user output device is the screen unless redirected by Davex.
+  * The dictionary starts at 256 bytes beyond the lowest memory allowed by
+    DaveX and works its way up.
+  * An address unit contains 8 bits.
+  * Numbers are 16-bits with the sign (if used) in the high bit.  Numbers
+    are stored little-endian.  Arithmetic is 16-bit except for mixed-precision.
+    No 32-bit by 32-bit division is implemented.
+  * Ranges:
+      n: -32768..32767
+      +n: 0..32767
+      u: 0..65535
+      d: -2147483648..2147483647
+      +d: 0..2147483647
+      ud: 0..4294967295
+  * There are no read-only data space regions.
+  * The buffer for WORD is 35 bytes and is shared with the pictured numeric
+    output.  The buffer will move with the dictionary end.
+  * One cell is two address units (16 bits total).
+  * One character is one address unit (8 bits total).
+  * The keyboard terminal input buffer is 252 bytes.
+  * The pictured numeric output string buffer is 35 bytes and shared with WORD.
+    The buffer will move with the dictionary end.
+  * The size of the PAD is 128 bytes.  The PAD will move with the dictionary
+    end and it usable size will shrink by one byte for each byte that UNUSED is
+    less than 179.  If PAD is used under this circumstance the behavior is
+    undefined.
+  * The system is not case-sensitive when finding dictionary names.
+  * The system prompt is either '[OK]' in the compilation state, or 'OK' in
+    the interpretation state, and is displayed after the previous input is
+    evaluated successfully.
+  * Division rounding is floored by default, but /MOD and M/MOD are deferred
+    words that may be used to change the rounding of those and their derived
+    single- and mixed-precision words, respectively.
+  * STATE takes the value 1 when compiling a definition before any DOES>,
+    and 2 after DOES>.
+  * Integer overflow is truncated to the low bits, except in UM/MOD and SM/REM
+    (and derived operations) where result overthrow results in an exception.
+  * The current definiton may be found after DOES>.
+
+Ambiguous conditions (Forth 2012 4.1.2):
+
+General:
+
+  * When a parsed name is neither a dictionary word nor a number, an exception
+    is thrown.
+  * When a definition name exceeds the maximum allowed length, an exception
+    is thrown.
+  * When addressing a region not listed in the data space, the system allows
+    the access with the consequences being left as an exercise for the
+    programmer.
+  * Passing incorrect argument types results in the argument being used as if
+    it were the expected type, possibly causing undefined behavior.
+  * An execution token may be found for a compile-only word.  Executing it
+    via EXECUTE outside of the compilation context results in undefined
+    behavior.
+  * Dividing by zero throws an exception.
+  * Data stack overflow throws an exception. Return stack overflow results in
+    undefined behavior.
+  * Insufficient space for loop-control variables results in undefined behavior.
+  * Insufficient space in the dictionary results in undefined behavior.
+  * Interpreting a word with undefined interpretation semantics throws an
+    exception.
+  * Modifying the contents of the input buffer may result in undefined behavior.
+    Modifying the contents of a compiled string literal is allowed but it cannot
+    be changed in size.  The change is permanent within the lifetime of the
+    program.  See below for interpreted string literals.
+  * Overflowing the pictured numeric string output buffer may collide with the
+    end of the dictionary.
+  * Overflowing a parsed string with WORD throws an exception.  PARSE and
+    PARSE-NAME effectively allow any length string to be parsed up to the
+    end of the the line or input buffer.
+  * Producing a number out of range results in overflow and truncation of the
+    result *except* when mixed-precision division overflows an exception is
+    thrown.
+  * Data stack undeflow throws an exception.  Return stack underflow results in
+    undefined behavior.
+  * Unexpected end of the input buffer while parsing a name returns a zero-
+    length string.
+
+Specific:
+
+  * >IN past the size of the input buffer results in termination of parsing.
+  * RECURSE after DOES> results in recursion to the definition being compiled
+    that contains the DOES>.
+  * RESTORE-INPUT requires the current input source to be the same that was
+    used during SAVE-INPUT or undefined behavior results.
+  * Data space containing definitions may only be de-allocated by a MARKER or
+    the behavior is undefined.
+  * No ambiguous conditions result from alignment requirements (there are none).
+  * The data space pointer cannot be misaligned, alignment is not required.
+  * PICK with insufficient stack throws an exception.
+  * Loop control parameters unavailable results in undefined behavior.
+  * Executing IMMEDIATE affects the last definition with a name.
+  * TO relies on >BODY, if >BODY cannot be used on the word, an exception is
+    thrown.  That being said, all words defined by CREATE, VALUE, CONSTANT, :,
+    :NONAME, DEFER and their derivatives have a body.  This means that TO may
+    modify the first execution token within a colon definition.  It can also
+    be used to alter a (non-system) CONSTANT or the target of DEFER.
+  * When name is not found by POSTPONE, [COMPILE], etc., an exception is thrown
+    and the current definition being compiled is discarded.
+  * If parameters are not of the same type in DO, the loop proceeds as if they
+    were the same type.
+  * POSTPONE, [COMPILE], etc. applied to TO result in TO's execution token
+    being compiled, making the word a parsing word.
+  * WORD is limited to 34 chars + length, which is less than the maximum length
+    of a counted string.  An exception will be thrown if the parsed word exceeds
+    the maximum.
+  * If u is greater than the number of bits in a cell for LSHIFT and RSHIFT,
+    the result will be zero.
+  * With regards to >BODY and DOES>, all secondary words have a body.  DOES>
+    will alter any secondary unless it was created with DEFER.
+  * Pictured numeric output words used outside of <# and #>, but before any
+    <# may write to unintended locations in memory, resulting in undefined
+    behavior.  It is generally safe to use them immediately after the #>, but
+    the c-addr,u pair returned by #> will no longer be valid.
+  * Accessing an unassigned deferred word throws an exception.
+  * Attempting to assign an xt to a word not defined by DEFER throws an
+    exception, when using DEFER! and derivatives.
+  * POSTPONE, [COMPILE], etc. used to resolve a deferred word results in
+    undefined behavior unless the deferred word is declared IMMEDIATE.
+  * S\" is not implemented, so \x not followed by two hexadecimal digits is
+    not applicable.
+  * Similarly, a \ before any character not defined for S\" is not applicable.
+
+Other system documentation (Forth 2012 4.1.3)
+
+  * No non-standard words use PAD.
+  * Terminal facilities are the same as those provided by Davex.
+  * Program space available is about 1.5K.
+  * The return stack is 128 cells, and is implemented in the 6502 stack.  Some
+    cells are used by the host system software.
+  * The data stack is 128 cells.  The data stack is split, the low unit and
+    high unit of any cell on the stack are not adjacent in memory.
+  * The system dictionary space is approximately 8K.
+  
+Non-standard words included:
+
+COLD ( x1..xn -- ): Restart the interpreter, resetting the dictionary.
+
+RDROP ( r: x -- ): drop the top of the return stack
+
+-ROT: rotate the opposite direction as ROT
+
+LAST: return the address of the last named dictionary entry
+
+S/REM: explicit towards-zero 16-bit division.
+
+F/MOD: explicit floored 16-bit division.
+
+M/MOD: mixed-precision division defaulting to floored behavior.  Used for
+calculations by other system words, may be changed to towards-zero division
+using ' SM/REM ' M/MOD DEFER!
+
+XKEY ( c1 -- c2 ): use Davex to read a key with c1 as the character under
+the cursor.
+
+MAXLEN ( -- u ): return maximum size that can be requested via ACCEPT.
+
+X3U. ( d -- ): print an unsigned integer of up to 24 bits, in base 10, via
+Davex.
+
+MESSAGE ( n -- ): prints "Msg #" followed by n.  Can be replaced with something
+more verbose using DEFER!
+
+ABORT!: like ABORT but an IMMEDIATE word.
+
+0SP: empty the parameter stack
+
+CATBUFF: return Davex CATBUFF address.
+
+FBUFF, FBUFF2, FBUFF3: return the address of the respected Davex buffer.  Each
+is 512 bytes.
+
+.FTYPE (u -- ): Use Davex to print ProDOS file type.
+
+.ACCESS (u -- ): use Davex to print ProDOS access bits.
+
+.SD (u -- ): use Davex to print ProDOS slot and drive.
+
+CSTYPE: use Davex to print a counted string.
+
+CS+CS ( c-addr1 c-addr2 -- ): append counted string c-addr2 to c-addr1.
+
+CS+ ( c-addr char -- ): append character char to counted string c-addr
+
+CS/- ( c-addr -- ): remove ProDOS last path component from counted string
+
+CS+/ ( c-addr -- ): append a / to counted string c-addr, but only if it does
+not already end with one.
+
+CSMOVE ( c-addr1 c-addr2 ): copy counted string c-addr1 to c-addr2.
+
+PLACE ( c-addr1 u c-addr2 ): place string described by c-addr,u as a counted
+string at c-addr2
+
+BUILD_LOCAL (c-addr -- c-addr'): call Davex xbuild_local
+
+REDIRECT? ( -- f ): Return Davex input or output are redirected, b0=1 if input
+b1=1 if output.
+
++REDIRECT, -REDIRECT: affect DaveX I/O redirection.
+
+U% (u1 u2 -- u): use Davex to calculate the percentage of u1 that u2 is.
+
+3U% (d1 d2 -- u): use Davex to calculate the percentage of d1 that d2 is, up
+to 24-bit.
+
+Y/N ( -- f ): use Davex to ask "? (y/n)" returning true if Y was pressed.
+
+Y/N2 ( u -- f ): u is either 'y' or 'n'.  Perform as Y/N above, but use u as
+the default if space or return are pressed.
+
+BELL: sound the Davex bell as configured by the user.
+
+.DATE ( u -- ): use Davex to print a ProDOS date word.
+
+.TIME ( u -- ): use Davex to print a ProDOS time word.
+
+.P8_ERR ( u -- ): use Davex to print a ProDOS error message.
+
+<DIR ( c-addr -- ): open a new directory level using the path pointed to by
+c-addr.
+
+<<DIR ( c-addr -- ): open a new directory level relative to the directory
+already open by <DIR.
+
+DIR+ ( -- flag): read one directory entry to CATBUFF and return a truthy value
+(address of CATBUFF), if no more return false.
+
+DIR>: close current directory level and opens the previous one if it was open.
+must use this once for each <DIR or <<DIR that was used.
+
+WAIT? ( -- f ): returns true if the user wants to soft-abort.  Pauses if the
+user types SPACE.  Should be done once per line printed.
+
+IOPOLL: give Davex a change to send stuff to printer, etc.
+
+DIRTY: tell Davex that its config is dirty.
+
+.VER ( u -- ): print a version number via Davex.
+
+XINFO ( u -- u1(ay) u2(x) true | false): call Davex xshell_info, if succesful
+returns true at the top of the stack and the info in u1 and u2 representing
+the AY and X registers, respectively.
+
+MLI ( u c-addr ): issue ProDOS call u with parameter list at c-addr.  Throws
+exception if ProDOS returns an error.  Exception number is in the range $FExx
+where XX is the ProDOS error number.
+
+HTAB ( u -- ): set cursor horizontal position
+
+VTAB ( u -- ): set cursor vertical position
+
+2S>D ( n1 n2 -- d1 d2 ): convert two singles to two doubles
+
+UML/MOD ( ud u -- u-rem ud-quot): 32/16 division with 32-bit quotient and 16-
+bit remainder.
+
+
+Notes for standard words:
+
+/MOD defaults to floored division but may be changed to towards-zero divion
+using ' S/REM ' /MOD DEFER!
+
+Similarly, M/MOD performs the same function for derived mixed-precision words,
+and can be changed via ' SM/REM ' M/MOD DEFER!
+
+S" and C": In interpretation mode, S" and C" use FBUFF3 (documented above),
+split into two 256-byte regions and alternating between the two. I.e. the first
+S" or C" uses FBUFF3+0, the second FBUFF3+256, the third back to FBUFF3+0
+again.  No effort is made to bounds-check.
+
+
+
+
+Examples:
+
+: prname dup c@ 15 and swap 1+ swap type ;
+create online_parms 2 c, 0 c, fbuff ,
+: online 197 online_parms mli 16 0 do 16 i * fbuff + dup c@ dup 15 and if .sd space [char] / emit prname cr else 2drop leave then loop ;
+: prent dup dup prname space 16 + c@ .ftype cr ;
+: cat <dir begin dir+ dup if dup prent then 0= until dir> ;
+
+c" /foo" cat
+
+Implementation internals/Hacking
+
+This Forth uses the direct-threaded model.  Forth is implemented as a virtual
+machine that may be freely mixed with with 6502 code.
+
+The stack would preferably be implemented on the zero page, but Davex does not
+give us enough room to have an acceptably-sized stack.  Therefore the ZP
+contains working registers and system variables instead.  This makes the
+system slower but somewhat space-efficient with regards to math operations.
+Some, if not all, of this slowness is made up for by the direct-threaded model.
+
+As a direct-threaded Forth, each compiled instruction generally refers
+to a code address, not a code field address.  The exception is an instruction
+in the range $0000..$00FF.  Since no code is allowed on the zero page, these
+are implemented as fast literal numbers and are immediately pushed onto the
+parameter stack.
+
+The following macros are defined in the source to aid readability:
+
+  ENTER - enter the Forth VM, cells representing compiled Forth code follow
+  immediately.  This starts a new thread by pushing the previous Forth IP
+  to the stack.  This implements the compiled semantics of a colon definition.
+  
+  EXIT - exit the current thread and return to the previous thread.
+  
+  CODE - exit the current thread and return to native code, which immediately
+  follows.
+  
+  NEXT - used at the end of a primitive to execute the next Forth instruction.
+  
+  PUSHNEXT - used at the end of a primitive to optimize the common case of 
+  jsr pushay followed by NEXT.
+  
+The dictionary is implemented as follows:
+
+No-name (defined by :NONAME for instance) definitions are headerless. and
+not searchable.
+
+Definitions with names are stored in the following format:
+
+  Offset  Use
+  ------- ---
+  $00-$01 Link to previous named definition, $0000 if this is the last one.
+  $02     Flags and name length, b7 is always set.
+          b0-b3 are name length, b4 is the "smudge" bit, b5 is the compile-only
+          flag, and b6 is the IMMEDIATE flag.
+  $03-n   Name, ASCII with high bit off.
+  n+1-m   Code field, this address is returned by ' (is the execution token).
+  m+1     Body, for deferred words.
+  m+3     Body, for colon definitions and CREATEd words.
+  
+Since each code field begins with native code, words defined from within
+Forth itself begin with a JSR ($20) or JMP ($4C) opcode.  JSR is used for
+all definitions except deferred words, which use JMP.
+
+From an execution token for a named word, the header can be found by scanning
+backwards from the xt for the high bit of the flags.
+
+The compile-only flag is used to flag system words that can only be used
+at compilation time, such as looping/control-flow words.  This bit may be
+used in the future to automatically compile a noname definition in the
+interpretation state when such a word is encountered, allowing such words to
+be used at any time.  For now using words with this flag in the interpretation
+state throws an exception.
+
+The "smudge" bit is used when a definition is open.  If the definition is
+aborted due to an error, the smudge bit will still be set and the system will
+delete the unfinished definition.  DOES> resets the smudge bit.
+
+In the interpreter source code, the following macros are defined to aid
+readibility and ensure consistent system dictionary data:
+
+  dsstart - start the dictionary
+
+  dword dname,fname,flags - create a word with the given label, Forth name, and
+  flags.
+
+  hword dname,fname,flags - create a headerless definiton. fname and flags are
+  ignored but should be provided so that a headerless word can be changed to
+  a normal one and vice-versa.
+  
+  dwordq dname,fname,flags - as dword, but in the Forth name will have each
+  ' replaced with a ", required due to an assembler limitation.  An equivalent
+  hwordq is not provided since a headerless word does not have a Forth name.
+  
+  dchain dname - change the dictionary chain so the next word will link to
+  dname instead.
+  
+  eword - end a definition started with one of the above.
+  
+  dconst dname,fname,value,flags - define a constant with the given value.
+  This macro results in a primitive that cannot be altered.
+  
+  dvar dname,fname,value,flags - define a variable, equivalent to CREATE 1
+  CELLS ALLOT.  The scoped label val is the address of the value.
+  
+  hvar dname,fname,value,flags - as dvar but produce a headerless definition.
+  
+  dvalue dname,fname,value,flags - define a VALUE. The scoped label val is
+  the address of the value.
+  
+  hvalue dname,fname,value,flags - define a headerless VALUE.
+  
+All of the definitions produced by the above contain a scoped label, xt, that
+is the address used for the execution token of the word, and must be used when
+hand-compiling definitions.  For instance:
+
+  dword MY2DROP,"MY2DROP"
+    ENTER
+    .addr DROP::xt
+    .addr DROP::xt
+    EXIT
+  eword
+
+dname is the label name to be used for the assembler, and will be used for
+hand-compiled Forth code in the interpreter.
+
+fname is the Forth name, what is used inside the interpreter.
+
+flags are the flag bits for the word.  They are always optional.  The high bit
+will always be set.
+
+value is the initial value (variables, values) or set value of the constants.
+
+
+
+
+  
+  
+
+
+
+
+
