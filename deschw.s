@@ -44,6 +44,8 @@
 ;   Reduce emulator detection to actual emulator for those supporting
 ;   EMUBYTE, or "probable" if no floating bus detected.  If you want more
 ;   specific identification, see idemu program.
+; 10-Feb-19 MAG => v1.4
+;   Detect VidHD
 
 ;.segment	"CODE_9000"
 
@@ -76,7 +78,7 @@ sptREAD	= 8
 sptWRITE	= 9
 ;
 ;*********************************************
-MyVersion	= $13
+MyVersion	= $14
 MinVersion	= $11
 ;*********************************************
 	rts
@@ -105,12 +107,14 @@ totalmem	= scratch+1	;ds.b 4
 emubyte = totalmem+4
 emuver  = emubyte+1
 scratch2 = emuver+1
-checkemu = scratch2+1
+checkemu = scratch2+1 ; zero = need to check for emulator
+iie_flag = checkemu+1 ; zero = running on Apple IIe
 ; dend
 ;
 start:
-  lda #$80
+  lda #$00
   sta checkemu
+  sta iie_flag
 	jsr xgetnump
 	beq do_all
 	lda #'t'+$80	;system Type
@@ -271,9 +275,7 @@ Not2e1:	cmp #$e0
 	jsr xmess
 	asc ")"
 	.byte $00
-	.pc02
-	stz checkemu
-	.p02
+	dec checkemu
 	rts
 
 NotLC:
@@ -435,8 +437,8 @@ brokec02:
   rts
 ;****************************************************
 emulation:
-  lda checkemu        ; skip if we positively identified hardware (LC PDS card)
-  beq noemu1
+  bit checkemu        ; skip if we positively identified hardware (LC PDS card)
+  bmi noemu1
   sta $c04f           ; get emubyte
   lda $c04f           ; Emulator ID
   ldy $c04f           ; The GS emulators (except Gus) all do version # here
@@ -530,6 +532,7 @@ ss1:	jsr scan1
 	lda slot
 	cmp #8
 	bcc ss1
+
 	rts
 ;
 scan1:	jsr xmess
@@ -659,10 +662,6 @@ PrSlotDesc:
 	lda bitpos,y
 	and sltbyt
 	beq SlotEmpty
-	ldy #5
-	lda (rom),y
-	cmp #$38
-	bne notPasc0
 	ldy #7
 	lda (rom),y
 	cmp #$18
@@ -671,7 +670,18 @@ PrSlotDesc:
 	lda (rom),y
 	cmp #$1
 	bne notPasc0
-	iny
+	ldy #5
+	lda (rom),y
+	cmp #$38
+	beq :+
+	cmp #$2C
+	bne notPasc0
+	; ViDHD
+	jsr xmess
+	asc "VidHD"
+	.byte $00
+	rts
+: ldy #$0c
 	lda (rom),y
 	pha
 	jsr xmess

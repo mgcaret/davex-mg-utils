@@ -19,9 +19,7 @@ temp0     = xczpage
           DX_end_ptab
           DX_desc "Identify emulator."
           DX_main
-          ;rts
           jsr   idemu
-          ; bcs   noemu
           stx   temp0
           jsr   xprint_path
           lda   temp0
@@ -44,17 +42,17 @@ temp0     = xczpage
           sta   emuver
           sec
           jsr   $fe1f
-          bcc   doemub          ; skip the BS if it claims to be a GS
+          bcc   :+              ; skip to checking emubute if it's a IIgs
           ; okay, let's check for some obvious things first
           lda   $fbb3
           cmp   #$06            ; Apple IIe or better
           bne   :+
           lda   $fbdd
-          cmp   #$02            ; PDS card or IIe for classic MacOS
+          cmp   #$02            ; LC PDS card or "IIe" for classic MacOS
           bne   :+
           lda   $fbde
           cmp   #$40            ; IIe for classic MacOS
-          bne   iiecard
+          bne   iiecard         ; If not, it's Apple IIe Card for Mac.
           ldy   #<emIIe
           lda   #>emIIe
           bne   foundemu1
@@ -63,50 +61,34 @@ iiecard:  lda   $fbbe
           ldy   #<emPDS
           lda   #>emPDS
           bne   foundemu1
-:         jmp   doemub          ; fall back to emubyte
-;
-; Routine to handle emulator detected, but emubyte=$00
-zeroid:   sec
+; Identify by emubyte value if possible
+:         jsr   getemub
+          bne   noemu           ; floating bus, not emu or a really good one
+          cmp   #$00            ; yes this is needed
+          bne   ckcatak         ; if not zero, go check for Catakig
+          sta   emuver          ; zero out the version
+          sec
           jsr   $fe1f           ; is GS?
-          bcs   :+
+          bcs   :+              ; nope, skip forward
           ldy   #<emGus         ; assume Gus if GS and ID 0
           lda   #>emGus
-          bne   foundemu1
-          ; check for Virtual II
-:         ldy   #$00
-          ldx   #$10            ; loop to check for Virtual ][
-viilp:    lda   $c04f
-          and   #$b0
-          cmp   #$b0            ; VII has mostly this here
-          bne   :+
-          iny
-:         dex
-          bne   viilp
-          cpy   #$0d            ; more than 14 $Bx?
-          bcc   :+          ; nope
-          stx   emuver          ; zero version
-          ldy   #<emVII
-          lda   #>emVII
           bne   foundemu1
           ; check for Apple IIjs or jse
           ; which always have zeros from $c001-$c00f
 :         lda   #$00
           ldx   #$0f
 jslp:     lda   $c000,x
-          bne   :+
+          bne   :+              ; find nonzero, move on
           dex
           bne   jslp
-          stx   emuver
+          stx   emuver          ; zero emuver
           ldy   #<emJS
           lda   #>emJS
           bne   foundemu1
-:         jmp   unkemu
-; Routine to identify by emubyte value if possible
-doemub:   jsr   getemub
-          bne   noemu
-          cmp   #$00            ; yes this is needed
-          beq   zeroid          ; do zero identification
-          cmp   #$ad            ; Catakig always has this in $c04f
+:         ldy   #<emVII         ; Not one of those, just assume Virtual ][
+          lda   #>emVII
+          bne   foundemu1          
+ckcatak:  cmp   #$ad            ; Catakig always has this in $c04f
           bne   :+
           lda   #$00
           sta   emuver          ; catakig doesn't have a version byte
@@ -199,7 +181,7 @@ emNone:   pstr_hi "None identified"
 emUnk:    pstr_hi "Unknown, emubyte = $XX"
 unkemub = *-2
 emPDS:    pstr_hi "Apple IIe Card"
-emVII:    pstr_hi "Virtual ]["
+emVII:    pstr_hi "Virtual ][ (probably)"
 emIIe:    pstr_hi "IIe"
 emGus:    pstr_hi "Gus (probably)"
 emCatak:  pstr_hi "Catakig"
