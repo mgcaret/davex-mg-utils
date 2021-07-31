@@ -2,7 +2,7 @@
 ; tardis - Get date/time from TimeLord server.
 ;
 ; options:
-;  -v             Verbose mode, prints server info
+;  -v             Verbose mode, prints server and other info
 ;  -n <nbp-name>  Specify NBP query, default =:TimeLord@*
 ;  -p             Set ProDOS global page date/time
 ;  -y             Patch ProDOS year table to use returned year
@@ -12,10 +12,36 @@
 ;  -w <hours>     Adjust time westward
 ; %hend
 
+; Notes: AFP epoch is 12:00 AM January 1, 2000 GMT.
+;        Mac epoch is 12:00 AM January 1, 1904 GMT.
+; the difference is 3029529600 ($b492f400) seconds
+; Mac epoch is returned by TimeLord.
+; AFP epoch is expected by WS Card ConvertTime function.
+
+; The general algorithm is:
+; Request the date from TimeLord.
+; Subtract the epoch difference from the response to get AFP time.
+; Use the FIConvertTime call to convert to ProDOS date and time.
+; That gives us month/day/year/hour/minute
+; To get seconds:
+;   Convert the ProDOS date and time back to AFP time.
+;   This number should be <= the AFP time we got above because the seconds are assumed
+;   to be 0.
+;   Subtract to get the seconds.
+;   In practice this does not work with the Apple II Workstation Card because its
+;   FIConvertTime function is buggy.  It is sometimes off by 2 mins or more and the
+;   reverse conversion gives garbage.
+;   The IIgs this algo works perfect.
+;   So for now we don't give seconds on a IIe.
+
+; Should probably rewrite this to just do the math rather than use FIConverTime.
+
 .pc02
 .include  "davex-mg.inc"
 
 ;ch        = $24                 ; cursor horizontal pos
+TL_OK      = 12
+TL_BAD     = 10
 
 entname   = filebuff2           ; buffer to build NBP entity name
 NBPBuf    = filebuff3           ; buffer for NBP request
@@ -29,9 +55,10 @@ sptr2     = sptr+2
 stemp     = sptr2+2
 verbose   = stemp+1             ; verbose flag
 seconds   = verbose+1           ; holds seconds
+notgs     = seconds + 1
 
           DX_start dx_mg_auto_origin ; load address
-          DX_info $02,$12,dx_cc_iie_or_iigs,$00
+          DX_info $03,$12,dx_cc_iie_or_iigs,$00
           DX_ptab
           DX_parm 'v',t_nil     ; verbose
           DX_parm 'n',t_string  ; name
@@ -44,6 +71,9 @@ seconds   = verbose+1           ; holds seconds
           DX_end_ptab
           DX_desc "Get time from TimeLord server."
           DX_main
+          sec
+          jsr   $FE1F           ; GS ID
+          ror   notgs           ; notGS now negative if it's not a GS
           cli                   ; appletalk requires interrupts
           ATcall inforeq
           bcc   :+
@@ -154,7 +184,7 @@ exiterr1: jmp   exiterr
 :         lda   #'v'|$80
           jsr   xgetparm_ch
           bcs   :++             ; skip if not verbose
-          ; display raw time in hex in little-endian format
+          ; display raw returned data in hex in little-endian format
           ldx   #$03
 :         lda   To,x
           phx
@@ -162,11 +192,20 @@ exiterr1: jmp   exiterr
           plx
           dex
           bpl   :-
+          ; display timelord status byte from user bytes
+          lda   #'/'|$80
+          jsr   cout
+          lda   Status
+          jsr   prbyte
           lda   #$8d
           jsr   cout
+          ; check status
+:         lda   Status
+          cmp   #TL_OK
+          bne   notime1
           ; now do big-endian subtraction of the base offset
           ; and simultaneously put the computed value in From
-:         sec
+          sec
           ldx   #$03
 :         lda   To,x
           sbc   Base,x
@@ -209,6 +248,9 @@ convert:  ATcall CvtParms
           bcs   notime1         ; bail if error
           ATcall ResetSec       ; sigh... weird firmware
           bcs   notime1
+          bit   notgs
+          stz   seconds
+          bmi   setp8           ; skip calculate seconds if not IIgs
           ; calculate seconds
           ; Copy converted values to the other convert parm list
           ldx   #$03
@@ -216,20 +258,15 @@ convert:  ATcall CvtParms
           sta   SecFrom,x
           dex
           bpl   :-
-          inc   CvtDir
-          ATcall CvtParms
-          ; call Convert again the other direction
-          ATcall SecParms
+          ATcall SecParms       ; convert back
           bcc   :+
 notime1:  jmp   notime          ; bail if error
-          ; value in SecTo is less than or equal to From and no more than 59
-          ; secs different
 :         lda   From+3
           sec
           sbc   SecTo+3
           sta   seconds
           ; set Prodos date/time if asked
-          lda   #'p'|$80        ; set prodos date/time?
+setp8:    lda   #'p'|$80        ; set prodos date/time?
           jsr   xgetparm_ch
           bcs   nosetp8         ; skip if -p not given
           ; Copy converted values to the global page
@@ -276,6 +313,8 @@ nosetyt:  ; TODO: set NSC or ThunderClock or something
           ldy   To+2
           lda   To+3
           jsr   xpr_time_ay
+          bit   notgs
+          bmi   nosec
           jsr   xmess
           asc_hi " +"
           .byte $00
@@ -290,6 +329,9 @@ nosetyt:  ; TODO: set NSC or ThunderClock or something
           jsr   xmess
           .byte "s"
           .byte $8d,$00
+          rts
+nosec:    lda   #$8d
+          jsr   cout
           rts
 notime:   lda   #$01
           jsr   xredirect
@@ -589,8 +631,8 @@ ATPbmap:  .byte $00             ; bitmap of blocks to recieve
           .byte $00             ; number of responses
           .res  6               ; 6 bytes reserved
 ; BDS for ATP request
-BDS:      .word $000c           ; 12-byte buffer for full response from TimeLord
-          .dword From           ; Buffer pointer
+BDS:      .word $0004           ; 4-byte buffer for basic response from TimeLord
+          .dword To             ; Buffer pointer
 Status:   .dword $00000000      ; returned user bytes, first byte = 12 if OK
           .word $0000           ; actual length
 ; Convert time parameters - P8 to network for calculating seconds
@@ -611,7 +653,6 @@ ResetSec: .byte 0,$34           ; sync ConvertTime
 CvtParms: .byte 0,$34           ; sync ConvertTime
           .word $0000           ; result
 CvtDir:   .byte $00             ; 0 = from AFP to ProDOS, 1 = reverse
-From:     .dword $00000000      ; 
+From:     .dword $00000000
 To:       .dword $00000000      ; initially contains time from ATP response
-          .res  4               ; fill out remaining part of ATP buffer
           DX_end
